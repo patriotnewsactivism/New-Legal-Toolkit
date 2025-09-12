@@ -1,0 +1,233 @@
+# TL;DR
+
+Your build broke for three reasons:
+
+1. **Alias `@/…` isn’t configured in CRA/Webpack** → add an alias (via CRACO) or drop `@`.
+2. **`src/lib/utils.ts` is missing** → shadcn/ui components require `cn()` helper.
+3. **Toolchain nuked by `npm audit fix --force`** → restore `react-scripts` + friends. Then fix a few TS issues (implicit-any, `.tsx` import, eslint redeclare).
+
+Below is a minimal, copy‑paste fix pack.
+
+---
+
+## Plan (pseudocode)
+
+* Restore CRA toolchain → install `react-scripts@5` + TS + types.
+* Add CRACO to inject Webpack alias `@ -> src` (no mass import edits).
+* Add `tsconfig` baseUrl/paths for TS resolver parity.
+* Create `src/lib/utils.ts` used by shadcn/ui.
+* Fix `.tsx` import in `src/main.tsx`.
+* Resolve lints/TS: rename duplicate `DocType`, add event/param types, safe index when `selectedState` is empty.
+* Rebuild.
+
+---
+
+## Commands (PowerShell)
+
+```powershell
+# 0) Clean slate
+Remove-Item -Recurse -Force node_modules -ErrorAction Ignore
+Remove-Item -Force package-lock.json -ErrorAction Ignore
+
+# 1) Restore CRA toolchain
+npm i -E react@18.2.0 react-dom@18.2.0 react-scripts@5.0.1
+npm i -D typescript@4.9.5 @types/react@18 @types/react-dom@18
+
+# 2) Add CRACO + UI deps used in your code
+npm i -E @craco/craco@7 zod@^3 class-variance-authority @radix-ui/react-select @radix-ui/react-tabs lucide-react clsx tailwind-merge
+
+# 3) Start dev server (after file edits below)
+npm run start
+```
+
+> If `tailwindcss` isn’t in your stack, that’s fine—the shadcn components still render; classes are just inert.
+
+---
+
+## `package.json` (scripts patch)
+
+**Edit your `package.json` scripts** to use CRACO instead of `react-scripts`:
+
+```jsonc
+{
+  "scripts": {
+    "start": "craco start",
+    "build": "craco build",
+    "test": "craco test",
+    "eject": "react-scripts eject"
+  }
+}
+```
+
+---
+
+## `craco.config.js` (new)
+
+```js
+// ./craco.config.js
+const path = require("path");
+
+module.exports = {
+  webpack: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+};
+```
+
+---
+
+## `tsconfig.json` (paths/baseUrl add)
+
+Add/merge these options (do **not** remove your existing compilerOptions):
+
+```jsonc
+{
+  "compilerOptions": {
+    "baseUrl": "src",
+    "paths": {
+      "@/*": ["*"]
+    }
+  }
+}
+```
+
+---
+
+## `src/lib/utils.ts` (new)
+
+```ts
+// src/lib/utils.ts
+import type { ClassValue } from "clsx";
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+// why: shadcn/ui expects a `cn()` helper for className merging
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+```
+
+---
+
+## `src/main.tsx` (fix .tsx import)
+
+Change the import to omit the extension:
+
+```diff
+- import App from './App.tsx'
++ import App from './App'
+```
+
+---
+
+## `src/components/LegalToolkitPro.tsx` (type & enum fixes)
+
+**A. Rename value/type to avoid ESLint no-redeclare**
+
+```diff
+- const DocType = z.enum([
++ const DocTypeSchema = z.enum([
+   "FOIA Request",
+   "State Public Records Request",
+   "ID Rights Card",
+   "Cease and Desist Letter",
+   "Notice of Claim",
+   "Pre-Suit Notice",
+   "Subpoena Duces Tecum",
+   "Discovery Request",
+ ]);
+- type DocType = z.infer<typeof DocType>;
++ type DocType = z.infer<typeof DocTypeSchema>;
+```
+
+**B. Use `DocTypeSchema` where you map options**
+
+```diff
+- {DocType.options.map((t) => (
++ {DocTypeSchema.options.map((t) => (
+```
+
+**C. Add explicit param types to silence implicit-any**
+
+```diff
+- <Select value={state.documentType} onValueChange={(v) => dispatch({ type: "set", key: "documentType", value: v })}>
++ <Select value={state.documentType} onValueChange={(v: string) => dispatch({ type: "set", key: "documentType", value: v })}>
+
+- <Select value={state.selectedState as string} onValueChange={(v) => dispatch({ type: "set", key: "selectedState", value: v })}>
++ <Select value={state.selectedState as string} onValueChange={(v: string) => dispatch({ type: "set", key: "selectedState", value: v })}>
+
+- <Input className="mt-1" value={state.agency} onChange={(e) => dispatch({ type: "set", key: "agency", value: e.target.value })} />
++ <Input className="mt-1" value={state.agency} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: "set", key: "agency", value: e.target.value })} />
+
+- <Input className="mt-1" value={state.jurisdiction} onChange={(e) => dispatch({ type: "set", key: "jurisdiction", value: e.target.value })} />
++ <Input className="mt-1" value={state.jurisdiction} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: "set", key: "jurisdiction", value: e.target.value })} />
+
+- <Textarea ... onChange={(e) => dispatch({ type: "set", key: "incident", value: e.target.value })} />
++ <Textarea ... onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => dispatch({ type: "set", key: "incident", value: e.target.value })} />
+
+- <Select value={state.violationType} onValueChange={(v) => dispatch({ type: "set", key: "violationType", value: v })}>
++ <Select value={state.violationType} onValueChange={(v: string) => dispatch({ type: "set", key: "violationType", value: v })}>
+
+- <Textarea ... value={state.damages} onChange={(e) => dispatch({ type: "set", key: "damages", value: e.target.value })} />
++ <Textarea ... value={state.damages} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => dispatch({ type: "set", key: "damages", value: e.target.value })} />
+
+- <Input ... value={state.plaintiffName} onChange={(e) => dispatch({ ... })} />
++ <Input ... value={state.plaintiffName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ ... })} />
+
+- <Input ... value={state.defendantName} onChange={(e) => dispatch({ ... })} />
++ <Input ... value={state.defendantName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ ... })} />
+
+- <Input ... value={state.recipient} onChange={(e) => dispatch({ ... })} />
++ <Input ... value={state.recipient} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ ... })} />
+
+- <Select value={state.claimType} onValueChange={(v) => dispatch({ type: "set", key: "claimType", value: v })}>
++ <Select value={state.claimType} onValueChange={(v: string) => dispatch({ type: "set", key: "claimType", value: v })}>
+
+- <Input ... value={state.caseNumber} onChange={(e) => dispatch({ ... })} />
++ <Input ... value={state.caseNumber} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ ... })} />
+
+- <Input ... value={state.courtName} onChange={(e) => dispatch({ ... })} />
++ <Input ... value={state.courtName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ ... })} />
+
+- <Textarea className="min-h-[300px]" value={state.generated} onChange={(e) => dispatch({ type: "generate", value: e.target.value })} />
++ <Textarea className="min-h-[300px]" value={state.generated} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => dispatch({ type: "generate", value: e.target.value })} />
+```
+
+**D. Safe index when state code can be empty**
+
+```diff
+- Recording: ${stateIDRights[code || ""]?.recording || "—"}
+- Cannabis: ${cannabisLaws[code || ""]?.status || "—"}
++ Recording: ${code ? stateIDRights[code as StateCode]?.recording ?? "—" : "—"}
++ Cannabis: ${code ? cannabisLaws[code as StateCode]?.status ?? "—" : "—"}
+```
+
+> If you still see `z.enum(...) Expected 0 arguments`, ensure `zod@^3` is installed (see commands above) and there isn’t a local `enum` shadowing `z.enum`.
+
+---
+
+## Optional: skip CRACO and drop `@` imports
+
+If you’d rather not add CRACO, change **all** imports `from "@/…"` → `from "…"` using absolute-from-`src` paths. Enable just:
+
+```jsonc
+{
+  "compilerOptions": { "baseUrl": "src" }
+}
+```
+
+Then `import { Card } from "components/ui/card"` etc.
+
+---
+
+## Now run
+
+```powershell
+npm run start
+# or build
+npm run build
+```
+
+You should be past the alias + utils + type errors, and `react-scripts` will exist again for builds.
