@@ -73,7 +73,7 @@ function generateFOIARequest(params:{ today:string; agency?:string; selectedStat
 }
 
 function generateCeaseDesistLetter(params:{ today:string; selectedState?:StateCode|""; stateNotice?: any; recipient?:string; violationType: FormState["violationType"]; incident?:string; jurisdiction?:string; damages?:string; }){
-  const { today, selectedState, stateNotice, recipient, violationType, incident, jurisdiction, damages } = params;
+  const { today, stateNotice, recipient, violationType, incident, jurisdiction, damages } = params;
   const stateSection = (() => { if(!stateNotice) return ""; let s = `\n\nSTATE-SPECIFIC REQUIREMENTS: ${stateNotice.requirements}`; if(stateNotice.mandatoryNotice) s += `\n\nMANDATORY NOTICE PERIOD: ${stateNotice.mandatoryNotice}`; if(stateNotice.penalties) s += `\n\nSTATUTORY PENALTIES: ${stateNotice.penalties}`; return s; })();
   const blocks: Record<FormState["violationType"], string> = {
     harassment: "• Harassment/IIED/Stalking • Privacy • Civil rights (42 U.S.C. § 1983)",
@@ -279,8 +279,8 @@ export default function LegalToolkitPro(){
                 <Label className={cx(classic && "text-xs")}>Violation Type (Cease & Desist)</Label>
                 <Select value={state.violationType} onValueChange={(v)=>dispatch({type:"set", key:"violationType", value:v})}>
                   <SelectTrigger className={cx("mt-1", classic && "h-8 text-xs")}><SelectValue/></SelectTrigger>
-                  <SelectContent className={cx(classic && "text-xs")}> 
-                    {["harassment","intellectual_property","debt_collection","trespass","defamation","contract","privacy"].map((t)=> (<SelectItem key={t} value={t}>{t.replaceAll("_"," ")}</SelectItem>))}
+                  <SelectContent className={cx(classic && "text-xs")}>
+                    {["harassment","intellectual_property","debt_collection","trespass","defamation","contract","privacy"].map((t)=> (<SelectItem key={t} value={t}>{t.replace(/_/g," ")}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
@@ -400,9 +400,9 @@ export default function LegalToolkitPro(){
         <Card className={cx(classic && "shadow-none border-muted/50 rounded-lg")}> 
           <CardHeader className={cx(classic && "py-3")}><CardTitle className={cx(classic ? "text-base" : "text-xl")}>Actions</CardTitle></CardHeader>
           <CardContent className={cx("space-y-3")}> 
-            <div className={cx("flex flex-wrap gap-2", classic && "gap-1")}> 
+            <div className={cx("flex flex-wrap gap-2", classic && "gap-1")}>
               <Button variant="outline" size={classic ? "sm" : "default"} onClick={()=>copyToClipboard(state.generated)} disabled={state.documentType === "ID Rights Card" && !state.generated}><Copy className="mr-2 h-4 w-4"/>Copy Text</Button>
-              <Button variant="outline" size={classic ? "sm" : "default"} onClick={()=>downloadText(`${state.documentType.replaceAll(" ", "-").toLowerCase()}.txt`, state.generated)} disabled={state.documentType === "ID Rights Card" && !state.generated}><Download className="mr-2 h-4 w-4"/>Download .txt</Button>
+              <Button variant="outline" size={classic ? "sm" : "default"} onClick={()=>downloadText(`${state.documentType.replace(/ /g, "-").toLowerCase()}.txt`, state.generated)} disabled={state.documentType === "ID Rights Card" && !state.generated}><Download className="mr-2 h-4 w-4"/>Download .txt</Button>
               {state.documentType === "ID Rights Card" && (<>
                 <Button size={classic ? "sm" : "default"} onClick={exportIdCardPNG}><IdCard className="mr-2 h-4 w-4"/>Export PNG</Button>
                 <Button size={classic ? "sm" : "default"} onClick={exportIdCardPDF}><Printer className="mr-2 h-4 w-4"/>Export PDF</Button>
